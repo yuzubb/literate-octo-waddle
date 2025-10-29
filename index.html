@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Node.js</title>
+    <title>Node.js WebプロキシUI (全画面)</title>
     <style>
         :root {
             --primary-color: #4f46e5;
@@ -14,78 +14,60 @@
             --info-bg: #eff6ff;
             --info-border: #bfdbfe;
             --info-text: #1e40af;
+            --header-height: 60px;
         }
 
         body {
             font-family: Arial, sans-serif;
             margin: 0;
-            padding: 32px;
+            padding: 0;
             background-color: var(--bg-color);
-            min-height: 100vh;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
         }
 
-        .container {
-            max-width: 900px;
-            margin: 0 auto;
+        .header {
+            height: var(--header-height);
             background-color: white;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-            border-radius: 12px;
-            padding: 32px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
         }
 
         h1 {
-            font-size: 1.875rem;
+            font-size: 1.25rem;
             font-weight: 700;
             color: var(--text-color);
-            margin-bottom: 24px;
-            padding-bottom: 8px;
-            border-bottom: 1px solid var(--border-color);
+            margin-right: 20px;
         }
-
-        .info-box {
-            background-color: var(--info-bg);
-            border: 1px solid var(--info-border);
-            color: var(--info-text);
-            padding: 16px;
-            border-radius: 8px;
-            margin-bottom: 24px;
-        }
-
-        .info-box p { margin-bottom: 8px; font-weight: 600; }
-        .info-box ul { list-style: disc; margin-left: 20px; font-size: 0.875rem; margin-top: 4px; }
-        .info-box code { background-color: var(--info-border); padding: 2px 6px; border-radius: 4px; font-family: monospace; }
 
         .form-group {
             display: flex;
-            gap: 12px;
-            margin-bottom: 24px;
-            flex-wrap: wrap;
+            gap: 10px;
+            flex-grow: 1;
         }
 
         #url-input {
             flex-grow: 1;
-            padding: 12px;
+            padding: 8px 12px;
             border: 1px solid var(--border-color);
-            border-radius: 8px;
-            font-size: 16px;
+            border-radius: 6px;
+            font-size: 14px;
             outline: none;
-            transition: border-color 0.15s;
-            min-width: 250px;
-        }
-        #url-input:focus {
-            border-color: var(--primary-color);
-            box-shadow: 0 0 0 1px var(--primary-color);
+            min-width: 200px;
         }
 
         #load-button {
-            padding: 12px 24px;
+            padding: 8px 15px;
             background-color: var(--primary-color);
             color: white;
             font-weight: 600;
             border: none;
-            border-radius: 8px;
+            border-radius: 6px;
             cursor: pointer;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
             transition: background-color 0.15s;
         }
         #load-button:hover {
@@ -93,26 +75,42 @@
         }
 
         .content-container {
-            border: 1px solid var(--border-color);
-            background-color: #f3f4f6;
-            border-radius: 8px;
-            overflow: hidden;
+            flex-grow: 1;
             position: relative;
-            min-height: 400px;
+            overflow: hidden;
         }
 
-        #initial-message, #error-message, .loading-message {
-            padding: 16px;
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            text-align: center;
+        #proxy-iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            display: none;
         }
-        #initial-message { color: #6b7280; }
-        
-        .loading-message { color: var(--primary-color); font-weight: 600; display: flex; align-items: center; gap: 8px; }
-        
+
+        .message-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            font-size: 1.2rem;
+            color: #6b7280;
+            z-index: 10;
+        }
+
+        .loading-message { 
+            color: var(--primary-color); 
+            font-weight: 600; 
+            display: flex; 
+            align-items: center; 
+            gap: 8px; 
+        }
+
         .spinner {
             border: 4px solid rgba(255, 255, 255, 0.3);
             border-top: 4px solid var(--primary-color);
@@ -127,30 +125,13 @@
             100% { transform: rotate(360deg); }
         }
 
-        #proxy-iframe {
-            width: 100%;
-            height: 600px;
-            border: none;
-            display: none;
-        }
-
         .hidden { display: none !important; }
     </style>
 </head>
 <body>
 
-    <div class="container">
-        <h1>🚀 Node.js Webプロキシデモ</h1>
-
-        <div class="info-box">
-            <p>ℹ️ 動作確認方法:</p>
-            <ul>
-                <li>このUIは、Node.jsサーバーの <code>/proxy</code> エンドポイントと通信します。</li>
-                <li>ブラウザのCORS制限はサーバーサイドで回避されています。</li>
-                <li><strong>注意</strong>: IFrame内での表示のため、画像やCSSのパスが崩れる場合があります。</li>
-            </ul>
-        </div>
-
+    <div class="header">
+        <h1>Webプロキシ</h1>
         <div class="form-group">
             <input type="url" id="url-input" 
                    placeholder="表示したい外部URLを入力 (例: https://example.com)" 
@@ -159,31 +140,38 @@
                 読み込む
             </button>
         </div>
+    </div>
 
-        <div id="content-container" class="content-container">
-            <p id="initial-message">
-                URLを入力して「読み込む」ボタンを押してください。
-            </p>
-            
-            <iframe id="proxy-iframe" sandbox="allow-same-origin allow-scripts" title="Proxied Content"></iframe>
+    <div id="content-container" class="content-container">
+        <div id="initial-message" class="message-overlay">
+            URLを入力して「読み込む」ボタンを押してください。<br>
+            リンクがプロキシ経由で開くか確認できます。
         </div>
-
+        
+        <iframe id="proxy-iframe" sandbox="allow-same-origin allow-scripts" title="Proxied Content"></iframe>
     </div>
 
     <script>
         document.getElementById('load-button').addEventListener('click', async () => {
             const targetUrl = document.getElementById('url-input').value.trim();
             const contentContainer = document.getElementById('content-container');
+            const initialMessage = document.getElementById('initial-message');
+            const iframe = document.getElementById('proxy-iframe');
 
             if (!targetUrl || !targetUrl.startsWith('http')) {
                 alert('有効なURL（httpまたはhttpsで始まる）を入力してください。');
                 return;
             }
 
+            initialMessage.classList.add('hidden');
+            iframe.style.display = 'none';
+
             contentContainer.innerHTML = `
-                <p class="loading-message">
-                    <span class="spinner"></span> 外部コンテンツを取得中...
-                </p>
+                <div class="message-overlay">
+                    <p class="loading-message">
+                        <span class="spinner"></span> 外部コンテンツを取得中...
+                    </p>
+                </div>
             `;
 
             const proxyEndpoint = `/proxy?url=${encodeURIComponent(targetUrl)}`; 
@@ -199,9 +187,10 @@
                 const htmlContent = await response.text();
                 
                 contentContainer.innerHTML = `
-                    <iframe id="proxy-iframe" class="w-full h-full" style="height: 600px; display: block;" sandbox="allow-same-origin allow-scripts" title="Proxied Content"></iframe>
+                    <iframe id="proxy-iframe" sandbox="allow-same-origin allow-scripts" title="Proxied Content"></iframe>
                 `;
                 const newIframe = document.getElementById('proxy-iframe');
+                newIframe.style.display = 'block';
 
                 const doc = newIframe.contentDocument || newIframe.contentWindow.document;
                 
@@ -212,10 +201,12 @@
             } catch (error) {
                 console.error('Fetch error:', error);
                 contentContainer.innerHTML = `
-                    <p id="error-message" style="color: #dc2626; font-weight: 600;">
-                        🛑 エラーが発生しました。<br>
-                        詳細: ${error.message}
-                    </p>
+                    <div class="message-overlay" style="background-color: #ffe5e5; color: #dc2626;">
+                        <p style="font-weight: 600;">
+                            🛑 エラーが発生しました。<br>
+                            詳細: ${error.message}
+                        </p>
+                    </div>
                 `;
             }
         });
