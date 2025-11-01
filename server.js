@@ -7,32 +7,27 @@ const cheerio = require('cheerio');
 const app = express();
 const PORT = 3000;
 
-// CORSを有効にする
 app.use(cors()); 
-
-// 静的ファイルを配信 (index.htmlなど)
 app.use(express.static(__dirname));
 
 /**
  * HTMLコンテンツ内のリソースURLをプロキシURLに書き換える関数
- * a, formに加え、img, link (CSS), script (JS) に対応
- * * @param {string} html - 書き換え対象のHTMLコンテンツ
- * @param {string} originalUrl - 元のページの絶対URL (相対パス解決用)
- * @returns {string} 書き換え後のHTMLコンテンツ
+ * a, form, img, link, scriptに加え、[style]属性やその他のメディアタグに対応
  */
 function rewriteHtmlContent(html, originalUrl) {
     const $ = cheerio.load(html);
     const baseUrl = new URL(originalUrl);
     const proxyPrefix = '/proxy?url=';
 
-    // 書き換え対象の要素セレクタを拡張: a, form, img, CSSのlink, script を追加
-    const selectors = 'a, form, img, link[rel="stylesheet"], script'; 
+    // 書き換え対象の要素セレクタを拡張: a, form, img, CSSのlink, script, style属性を持つ全要素、video/audio/iframe/source
+    const selectors = 'a, form, img, link[rel="stylesheet"], script, [style], video, audio, source, iframe'; 
 
     $(selectors).each((i, element) => {
-        const tagName = $(element).get(0).tagName;
+        const $element = $(element);
+        const tagName = $element.get(0).tagName;
         let attribute = '';
         
-        // タグの種類に応じて、書き換え対象の属性を決定
+        // 1. タグの種類に応じて、書き換え対象の属性を決定
         switch (tagName) {
             case 'a':
                 attribute = 'href';
@@ -41,46 +36,65 @@ function rewriteHtmlContent(html, originalUrl) {
                 attribute = 'action';
                 break;
             case 'img':
-                attribute = 'src'; // 画像
+            case 'script':
+            case 'video':
+            case 'audio':
+            case 'iframe':
+            case 'source':
+                attribute = 'src';
                 break;
-            case 'link': // CSSファイルなど
-            case 'script': // JavaScriptファイル
-                // 属性として 'href' (linkタグ) または 'src' (script, imgタグ) を使用
-                attribute = 'href' in $(element).attr() ? 'href' : 'src'; 
+            case 'link':
+                attribute = 'href';
                 break;
             default:
-                return; // 対象外のタグはスキップ
+                // スタイル属性の処理に移る
+                break;
         }
 
-        let originalPath = $(element).attr(attribute);
-
-        // 有効なパスがあり、data URLではない場合のみ処理
+        // URL属性（href/src/action）の書き換え
+        let originalPath = $element.attr(attribute);
         if (originalPath && !originalPath.startsWith('data:')) {
             try {
-                // 1. 相対パスを絶対URLに変換
                 const absoluteUrl = new URL(originalPath, baseUrl).href;
-                // 2. プロキシ経由のURLに変換
                 const proxiedUrl = proxyPrefix + encodeURIComponent(absoluteUrl);
                 
-                // 3. 属性値を書き換え
-                $(element).attr(attribute, proxiedUrl);
+                $element.attr(attribute, proxiedUrl);
                 
-                // formタグの場合は、method属性の欠落を防ぐ
                 if (tagName === 'form') {
-                    $(element).attr('method', $(element).attr('method') || 'GET');
+                    $element.attr('method', $element.attr('method') || 'GET');
                 }
             } catch (e) {
-                // URL変換エラーが発生しても処理は続行
+                // URL変換エラーを無視
             }
+        }
+        
+        // 2. インラインスタイル（style属性）内のurl(...)の書き換え
+        const styleAttr = $element.attr('style');
+        if (styleAttr) {
+            const rewrittenStyle = styleAttr.replace(/url\s*\((['"]?)(.*?)\1\)/gi, (match, quote, path) => {
+                if (path.startsWith('http') || path.startsWith('//') || path.startsWith('data:')) {
+                    return match;
+                }
+                try {
+                    const absoluteUrl = new URL(path, baseUrl).href;
+                    const proxiedUrl = proxyPrefix + encodeURIComponent(absoluteUrl);
+                    return `url(${quote}${proxiedUrl}${quote})`;
+                } catch (e) {
+                    return match;
+                }
+            });
+            $element.attr('style', rewrittenStyle);
         }
     });
 
-    // <base>タグは相対URLの解決を混乱させるため削除
     $('base').remove();
 
     return $.html();
 }
 
+// -------------------------------------------------------------
+// メインのプロキシエンドポイント
+// -------------------------------------------------------------
 app.get('/proxy', async (req, res) => {
     const targetUrl = req.query.url;
 
@@ -102,7 +116,6 @@ app.get('/proxy', async (req, res) => {
     console.log(`[PROXY] ターゲットURL: ${targetUrl}`);
 
     try {
-        // GETリクエストで外部サイトにアクセス
         const response = await fetch(targetUrl, {
             method: 'GET'
         });
@@ -111,7 +124,6 @@ app.get('/proxy', async (req, res) => {
         
         const contentType = response.headers.get('content-type');
         
-        // 外部サイトのヘッダーを転送 (不要なヘッダーを除く)
         response.headers.forEach((value, name) => {
             if (!['connection', 'content-encoding', 'transfer-encoding', 'content-length'].includes(name.toLowerCase())) {
                 res.setHeader(name, value);
@@ -119,13 +131,36 @@ app.get('/proxy', async (req, res) => {
         });
 
         if (contentType && contentType.includes('text/html')) {
-            // HTMLの場合: コンテンツをプロキシURLに書き換えてからレスポンス
+            // HTMLの場合: URLを書き換え
             const contentBuffer = await response.arrayBuffer();
             let content = Buffer.from(contentBuffer).toString();
             content = rewriteHtmlContent(content, targetUrl);
             res.end(content);
+            
+        } else if (contentType && contentType.includes('text/css')) {
+            // ⭐ CSSの場合: CSSファイル内のurl(...)を書き換え
+            let cssContent = await response.text();
+            
+            const baseUrl = new URL(targetUrl);
+            const proxyPrefix = '/proxy?url=';
+            
+            cssContent = cssContent.replace(/url\s*\((['"]?)(.*?)\1\)/gi, (match, quote, path) => {
+                if (path.startsWith('http') || path.startsWith('//') || path.startsWith('data:')) {
+                    return match;
+                }
+                try {
+                    const absoluteUrl = new URL(path, baseUrl).href;
+                    const proxiedUrl = proxyPrefix + encodeURIComponent(absoluteUrl);
+                    return `url(${quote}${proxiedUrl}${quote})`;
+                } catch (e) {
+                    return match;
+                }
+            });
+            
+            res.end(cssContent);
+            
         } else {
-            // HTML以外 (画像、CSS、JSなど) の場合: バイナリとしてそのままレスポンス
+            // HTML/CSS以外 (画像、JS、フォントなど) の場合: バイナリとしてそのままレスポンス
             const buffer = await response.arrayBuffer();
             res.end(Buffer.from(buffer));
         }
