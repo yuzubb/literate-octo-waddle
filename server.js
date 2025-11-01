@@ -10,6 +10,7 @@ const PORT = 3000;
 app.use(cors()); 
 app.use(express.static(__dirname));
 
+
 /**
  * HTMLコンテンツ内のリソースURLをプロキシURLに書き換える関数
  */
