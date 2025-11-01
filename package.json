@@ -1,14 +1,21 @@
 {
-  "name": "simple-node-proxy",
+  "name": "proxy-server",
   "version": "1.0.0",
-  "description": "A simple educational web proxy using Node.js and Express.",
+  "description": "A simple Node.js web proxy with URL rewriting.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
+  "keywords": [
+    "proxy",
+    "express",
+    "cheerio"
+  ],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
-    "express": "^4.18.2",
+    "cheerio": "^1.0.0-rc.12",
     "cors": "^2.8.5",
-    "cheerio": "^1.0.0-rc.12" 
+    "express": "^4.19.2"
   }
 }
