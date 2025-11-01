@@ -18,6 +18,7 @@ function rewriteHtmlContent(html, originalUrl) {
     const baseUrl = new URL(originalUrl);
     const proxyPrefix = '/proxy?url=';
 
+    // 書き換え対象の要素セレクタを拡張: a, form, img, CSSのlink, script, style属性を持つ全要素、video/audio/iframe/source
     const selectors = 'a, form, img, link[rel="stylesheet"], script, [style], video, audio, source, iframe'; 
 
     $(selectors).each((i, element) => {
@@ -45,15 +46,16 @@ function rewriteHtmlContent(html, originalUrl) {
                 attribute = 'href';
                 break;
             default:
-                break; // style属性の処理に移る
+                break; 
         }
 
         // URL属性（href/src/action）の書き換え
         let originalPath = $element.attr(attribute);
         
-        // ⭐ エラー修正: originalPathが文字列であることを確認
+        // ⭐ エラー修正: originalPathが文字列であることを確認 (typeof originalPath === 'string')
         if (typeof originalPath === 'string' && originalPath.length > 0 && !originalPath.startsWith('data:')) {
             try {
+                // 相対パスを絶対URLに変換してからプロキシURLに変換
                 const absoluteUrl = new URL(originalPath, baseUrl).href;
                 const proxiedUrl = proxyPrefix + encodeURIComponent(absoluteUrl);
                 
@@ -69,7 +71,8 @@ function rewriteHtmlContent(html, originalUrl) {
         
         // 2. インラインスタイル（style属性）内のurl(...)の書き換え
         const styleAttr = $element.attr('style');
-        if (typeof styleAttr === 'string' && styleAttr.length > 0) { // styleAttrも文字列であることを確認
+        // ⭐ styleAttrも文字列であることを確認
+        if (typeof styleAttr === 'string' && styleAttr.length > 0) { 
             const rewrittenStyle = styleAttr.replace(/url\s*\((['"]?)(.*?)\1\)/gi, (match, quote, path) => {
                 if (path.startsWith('http') || path.startsWith('//') || path.startsWith('data:')) {
                     return match;
@@ -166,13 +169,14 @@ app.get('/proxy', async (req, res) => {
         }
 
     } catch (error) {
-        // エラーログを改善し、エラーオブジェクト全体を出力しないように変更
+        // エラーメッセージを分かりやすくコンソールに出力
         console.error(`[ERROR] プロキシ通信失敗: ${error.message}`); 
         res.status(500).send({ error: `外部サイトへのアクセスに失敗しました: ${error.message}` });
     }
 });
 
 app.get('/', (req, res) => {
+    // index.htmlは静的ファイルとして配信されることを想定
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
