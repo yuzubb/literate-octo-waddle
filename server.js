@@ -12,14 +12,12 @@ app.use(express.static(__dirname));
 
 /**
  * HTMLコンテンツ内のリソースURLをプロキシURLに書き換える関数
- * a, form, img, link, scriptに加え、[style]属性やその他のメディアタグに対応
  */
 function rewriteHtmlContent(html, originalUrl) {
     const $ = cheerio.load(html);
     const baseUrl = new URL(originalUrl);
     const proxyPrefix = '/proxy?url=';
 
-    // 書き換え対象の要素セレクタを拡張: a, form, img, CSSのlink, script, style属性を持つ全要素、video/audio/iframe/source
     const selectors = 'a, form, img, link[rel="stylesheet"], script, [style], video, audio, source, iframe'; 
 
     $(selectors).each((i, element) => {
@@ -47,13 +45,14 @@ function rewriteHtmlContent(html, originalUrl) {
                 attribute = 'href';
                 break;
             default:
-                // スタイル属性の処理に移る
-                break;
+                break; // style属性の処理に移る
         }
 
         // URL属性（href/src/action）の書き換え
         let originalPath = $element.attr(attribute);
-        if (originalPath && !originalPath.startsWith('data:')) {
+        
+        // ⭐ エラー修正: originalPathが文字列であることを確認
+        if (typeof originalPath === 'string' && originalPath.length > 0 && !originalPath.startsWith('data:')) {
             try {
                 const absoluteUrl = new URL(originalPath, baseUrl).href;
                 const proxiedUrl = proxyPrefix + encodeURIComponent(absoluteUrl);
@@ -70,7 +69,7 @@ function rewriteHtmlContent(html, originalUrl) {
         
         // 2. インラインスタイル（style属性）内のurl(...)の書き換え
         const styleAttr = $element.attr('style');
-        if (styleAttr) {
+        if (typeof styleAttr === 'string' && styleAttr.length > 0) { // styleAttrも文字列であることを確認
             const rewrittenStyle = styleAttr.replace(/url\s*\((['"]?)(.*?)\1\)/gi, (match, quote, path) => {
                 if (path.startsWith('http') || path.startsWith('//') || path.startsWith('data:')) {
                     return match;
@@ -138,12 +137,13 @@ app.get('/proxy', async (req, res) => {
             res.end(content);
             
         } else if (contentType && contentType.includes('text/css')) {
-            // ⭐ CSSの場合: CSSファイル内のurl(...)を書き換え
+            // CSSの場合: CSSファイル内のurl(...)を書き換え
             let cssContent = await response.text();
             
             const baseUrl = new URL(targetUrl);
             const proxyPrefix = '/proxy?url=';
             
+            // CSS内の url(...) をプロキシURLに書き換える
             cssContent = cssContent.replace(/url\s*\((['"]?)(.*?)\1\)/gi, (match, quote, path) => {
                 if (path.startsWith('http') || path.startsWith('//') || path.startsWith('data:')) {
                     return match;
@@ -166,7 +166,8 @@ app.get('/proxy', async (req, res) => {
         }
 
     } catch (error) {
-        console.error(`[ERROR] プロキシ通信失敗: ${error.message}`);
+        // エラーログを改善し、エラーオブジェクト全体を出力しないように変更
+        console.error(`[ERROR] プロキシ通信失敗: ${error.message}`); 
         res.status(500).send({ error: `外部サイトへのアクセスに失敗しました: ${error.message}` });
     }
 });
